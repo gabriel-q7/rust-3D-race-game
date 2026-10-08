@@ -48,7 +48,8 @@ fn drive_player(time: Res<Time>, keys: Res<ButtonInput<KeyCode>>, bounds: Res<Tr
     let steering_strength = (drive.speed.abs() / MAX_SPEED).clamp(0.15, 1.0);
     transform.rotate_y(-(steering as f32) * 1.8 * steering_strength * dt * drive.speed.signum());
     drive.previous_position = transform.translation;
-    transform.translation += *transform.forward() * drive.speed * dt;
+    let forward = *transform.forward();
+    transform.translation += forward * drive.speed * dt;
 
     let p = transform.translation;
     let in_outer = p.x.abs() <= bounds.outer_half_x && p.z.abs() <= bounds.outer_half_z;

@@ -1,4 +1,4 @@
-use bevy::{color::palettes::css::*, prelude::*};
+use bevy::prelude::*;
 use crate::{components::{CountdownText, HudRoot, ResultPanel, ResultText, SpeedText, TimerText}, resources::{Countdown, GameState, RaceTimer}};
 
 pub struct UiPlugin;
@@ -9,7 +9,7 @@ impl Plugin for UiPlugin {
     }
 }
 
-fn text_style(size: f32, color: Color) -> (TextFont, TextColor) { (TextFont { font_size: size, ..default() }, TextColor(color)) }
+fn text_style(size: f32, color: Color) -> (TextFont, TextColor) { (TextFont { font_size: FontSize::Px(size), ..default() }, TextColor(color)) }
 
 fn spawn_ui(mut commands: Commands) {
     let root = commands.spawn((Node { width: Val::Percent(100.0), height: Val::Percent(100.0), position_type: PositionType::Absolute, ..default() }, HudRoot)).id();
@@ -28,9 +28,24 @@ fn update_countdown(state: Res<State<GameState>>, countdown: Res<Countdown>, mut
     text.0 = if *state.get() == GameState::Countdown { if countdown.step > 0 { countdown.step.to_string() } else { "GO!".into() } } else { String::new() };
 }
 
-fn update_hud(state: Res<State<GameState>>, timer: Res<RaceTimer>, mut timer_text: Query<&mut Text, With<TimerText>>, mut speed_text: Query<&mut Text, With<SpeedText>>) {
-    if let Ok(mut text) = timer_text.single_mut() { text.0 = format!("TIME {}", format_time(timer.elapsed)); }
-    if let Ok(mut text) = speed_text.single_mut() { text.0 = if *state.get() == GameState::Racing { "SPEED 000".into() } else { String::new() }; }
+fn update_hud(
+    state: Res<State<GameState>>,
+    timer: Res<RaceTimer>,
+    mut text_queries: ParamSet<(
+        Query<&mut Text, With<TimerText>>,
+        Query<&mut Text, With<SpeedText>>,
+    )>,
+) {
+    if let Ok(mut text) = text_queries.p0().single_mut() {
+        text.0 = format!("TIME {}", format_time(timer.elapsed));
+    }
+    if let Ok(mut text) = text_queries.p1().single_mut() {
+        text.0 = if *state.get() == GameState::Racing {
+            "SPEED 000".into()
+        } else {
+            String::new()
+        };
+    }
 }
 
 fn update_result(state: Res<State<GameState>>, timer: Res<RaceTimer>, mut panel: Query<&mut Node, With<ResultPanel>>, mut result: Query<&mut Text, With<ResultText>>) {

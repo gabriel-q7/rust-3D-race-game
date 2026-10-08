@@ -4,8 +4,8 @@ pub struct EnvironmentPlugin;
 impl Plugin for EnvironmentPlugin { fn build(&self, app: &mut App) { app.add_systems(Startup, spawn_environment); } }
 
 fn spawn_environment(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials: ResMut<Assets<StandardMaterial>>) {
-    commands.spawn((DirectionalLight { illuminance: 7000.0, color: Color::srgb(0.35, 0.2, 0.7), shadows_enabled: true, ..default() }, Transform::from_rotation(Quat::from_euler(EulerRot::XYZ, -1.0, -0.8, 0.0))));
-    commands.insert_resource(AmbientLight { color: Color::srgb(0.18, 0.06, 0.25), brightness: 500.0, ..default() });
+    commands.spawn((DirectionalLight { illuminance: 7000.0, color: Color::srgb(0.35, 0.2, 0.7), shadow_maps_enabled: true, ..default() }, Transform::from_rotation(Quat::from_euler(EulerRot::XYZ, -1.0, -0.8, 0.0))));
+    commands.insert_resource(GlobalAmbientLight { color: Color::srgb(0.18, 0.06, 0.25), brightness: 500.0, ..default() });
     let dark = materials.add(Color::srgb(0.015, 0.005, 0.04));
     commands.spawn((Mesh3d(meshes.add(Cuboid::new(220.0, 0.2, 180.0))), MeshMaterial3d(dark), Transform::from_xyz(0.0, -0.35, 0.0)));
     let moon = materials.add(StandardMaterial { base_color: Color::srgb(1.0, 0.18, 0.65), emissive: LinearRgba::new(1.0, 0.05, 0.4, 1.0), ..default() });

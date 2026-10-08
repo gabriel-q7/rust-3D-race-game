@@ -1,4 +1,4 @@
-use bevy::{color::palettes::css::*, math::primitives::Cuboid, prelude::*};
+use bevy::{math::primitives::Cuboid, prelude::*};
 
 use crate::{components::{FinishLine, TrackMarker}, resources::TrackBounds};
 
