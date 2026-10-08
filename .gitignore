@@ -1,0 +1,23 @@
+# Rust build output
+/target/
+
+# Rust toolchain and coverage artifacts
+*.profraw
+*.profdata
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# Editor and operating-system files
+.DS_Store
+Thumbs.db
+/.idea/
+/.vscode/
+*.swp
+*.swo
+
+# Temporary logs and local captures
+*.log
+*.trace
+screenshots/
