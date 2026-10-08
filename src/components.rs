@@ -7,6 +7,12 @@ pub struct Player;
 pub struct CarBody;
 
 #[derive(Component)]
+pub struct Wheel {
+    pub front: bool,
+    pub spin: f32,
+}
+
+#[derive(Component)]
 pub struct FollowCamera;
 
 #[derive(Component)]

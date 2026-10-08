@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use crate::{components::{DriveState, Player}, resources::{Countdown, GameState, RaceProgress, RaceTimer}};
+use crate::{components::{DriveState, Player}, resources::{Countdown, GameState, RaceProgress, RaceTimer, TrackPath}};
 
 pub struct RacePlugin;
 impl Plugin for RacePlugin {
@@ -25,10 +25,16 @@ fn start_race(mut timer: ResMut<RaceTimer>) { timer.elapsed = 0.0; timer.running
 
 fn race_clock(time: Res<Time>, mut timer: ResMut<RaceTimer>) { if timer.running { timer.elapsed += time.delta_secs(); } }
 
-fn finish_detection(time: Res<Time>, mut progress: ResMut<RaceProgress>, mut timer: ResMut<RaceTimer>, player: Query<(&Transform, &DriveState), With<Player>>, mut next: ResMut<NextState<GameState>>) {
+fn finish_detection(time: Res<Time>, path: Res<TrackPath>, mut progress: ResMut<RaceProgress>, mut timer: ResMut<RaceTimer>, player: Query<(&Transform, &DriveState), With<Player>>, mut next: ResMut<NextState<GameState>>) {
     let Ok((transform, drive)) = player.single() else { return };
-    if transform.translation.x > 18.0 { progress.armed = true; }
-    let crossed_gate = drive.previous_position.x < 0.0 && transform.translation.x >= 0.0 && transform.translation.z < -17.0;
+    let checkpoint = path.points[10];
+    if transform.translation.distance(checkpoint) < path.width * 1.5 { progress.armed = true; }
+    let start = path.points[0];
+    let tangent = (path.points[1] - start).normalize();
+    let previous_side = (drive.previous_position - start).dot(tangent);
+    let current_side = (transform.translation - start).dot(tangent);
+    let lateral = (transform.translation - start - tangent * current_side).length();
+    let crossed_gate = previous_side <= 0.0 && current_side > 0.0 && lateral < path.width * 0.8;
     if progress.armed && crossed_gate && drive.speed > 0.0 { timer.running = false; next.set(GameState::Finished); }
     let _ = time;
 }
