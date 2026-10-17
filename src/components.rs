@@ -43,10 +43,12 @@ pub struct ResultText;
 pub struct DriveState {
     pub speed: f32,
     pub previous_position: Vec3,
+    /// Last track sample the car was projected onto; keeps the search local.
+    pub track_index: Option<usize>,
 }
 
 impl Default for DriveState {
     fn default() -> Self {
-        Self { speed: 0.0, previous_position: Vec3::ZERO }
+        Self { speed: 0.0, previous_position: Vec3::ZERO, track_index: None }
     }
 }

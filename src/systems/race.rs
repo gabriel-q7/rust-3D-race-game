@@ -27,10 +27,11 @@ fn race_clock(time: Res<Time>, mut timer: ResMut<RaceTimer>) { if timer.running 
 
 fn finish_detection(time: Res<Time>, path: Res<TrackPath>, mut progress: ResMut<RaceProgress>, mut timer: ResMut<RaceTimer>, player: Query<(&Transform, &DriveState), With<Player>>, mut next: ResMut<NextState<GameState>>) {
     let Ok((transform, drive)) = player.single() else { return };
-    let checkpoint = path.points[10];
+    // Halfway round the loop must be visited before the gate counts.
+    let checkpoint = path.frames[path.frames.len() / 2].position;
     if transform.translation.distance(checkpoint) < path.width * 1.5 { progress.armed = true; }
-    let start = path.points[0];
-    let tangent = (path.points[1] - start).normalize();
+    let start = path.frames[0].position;
+    let tangent = path.frames[0].tangent;
     let previous_side = (drive.previous_position - start).dot(tangent);
     let current_side = (transform.translation - start).dot(tangent);
     let lateral = (transform.translation - start - tangent * current_side).length();

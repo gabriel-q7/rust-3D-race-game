@@ -17,11 +17,12 @@ fn spawn_environment(mut commands: Commands, path: Res<TrackPath>, mut meshes: R
     for z in [-70.0, -55.0, 55.0, 70.0] { for x in [-70.0, -55.0, 55.0, 70.0] {
         spawn_pillar(&mut commands, &mut meshes, cyan.clone(), Vec3::new(x, 3.0, z));
     }}
-    for (x, z, h) in [(-65.0, 10.0, 8.0), (65.0, -8.0, 12.0), (-60.0, -45.0, 16.0), (60.0, 45.0, 10.0)] {
+    for (x, z, h) in [(-78.0, 10.0, 8.0), (65.0, -8.0, 12.0), (-60.0, -45.0, 16.0), (60.0, 45.0, 10.0)] {
         commands.spawn((Mesh3d(meshes.add(Cuboid::new(8.0, h, 8.0))), MeshMaterial3d(purple.clone()), Transform::from_xyz(x, h / 2.0, z)));
     }
-    for (index, point) in path.points.iter().enumerate().filter(|(index, _)| *index % 5 == 2) {
-        spawn_arch(&mut commands, &mut meshes, cyan.clone(), *point, (path.points[(index + 1) % path.points.len()] - *point).normalize(), path.width);
+    // Arches sit on the generated road, evenly spread around the loop.
+    for frame in path.frames.iter().skip(path.frames.len() / 8).step_by(path.frames.len() / 4) {
+        spawn_arch(&mut commands, &mut meshes, cyan.clone(), frame.position, frame.tangent, path.width);
     }
     for (x, y, z) in [(-68.0, 14.0, 32.0), (70.0, 18.0, -25.0), (20.0, 26.0, 58.0), (-20.0, 21.0, 35.0)] {
         commands.spawn((Mesh3d(meshes.add(Sphere::new(2.0).mesh().uv(8, 5))), MeshMaterial3d(pink.clone()), Transform::from_xyz(x, y, z)));

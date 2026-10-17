@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use crate::{components::{CountdownText, HudRoot, ResultPanel, ResultText, SpeedText, TimerText}, resources::{Countdown, GameState, RaceTimer}};
+use crate::{components::{CountdownText, DriveState, Player, HudRoot, ResultPanel, ResultText, SpeedText, TimerText}, resources::{Countdown, GameState, RaceTimer}};
 
 pub struct UiPlugin;
 impl Plugin for UiPlugin {
@@ -31,6 +31,7 @@ fn update_countdown(state: Res<State<GameState>>, countdown: Res<Countdown>, mut
 fn update_hud(
     state: Res<State<GameState>>,
     timer: Res<RaceTimer>,
+    player: Query<&DriveState, With<Player>>,
     mut text_queries: ParamSet<(
         Query<&mut Text, With<TimerText>>,
         Query<&mut Text, With<SpeedText>>,
@@ -40,10 +41,10 @@ fn update_hud(
         text.0 = format!("TIME {}", format_time(timer.elapsed));
     }
     if let Ok(mut text) = text_queries.p1().single_mut() {
-        text.0 = if *state.get() == GameState::Racing {
-            "SPEED 000".into()
-        } else {
-            String::new()
+        text.0 = match (state.get(), player.single()) {
+            // Track units are treated as meters, so m/s * 3.6 gives km/h.
+            (GameState::Racing, Ok(drive)) => format!("SPEED {:03} KM/H", (drive.speed.abs() * 3.6).round() as u32),
+            _ => String::new(),
         };
     }
 }
