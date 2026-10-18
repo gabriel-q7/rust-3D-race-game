@@ -73,6 +73,11 @@ pub struct TrackPath {
 }
 
 impl TrackPath {
+    /// Height of the ground plane's top face; no part of the road may dip below it.
+    pub const GROUND_TOP: f32 = -0.25;
+    /// Minimum gap between the road's underside and the ground.
+    const GROUND_CLEARANCE: f32 = 0.5;
+    pub const ROAD_THICKNESS: f32 = 0.35;
     /// Target radius for rounded corners, measured on the centerline.
     pub const CORNER_RADIUS: f32 = 12.0;
     /// Distance between spline control points after resampling.
@@ -86,7 +91,8 @@ impl TrackPath {
     /// Builds the drivable loop from rough layout points:
     /// 1. every corner is replaced by a circular arc (fillet),
     /// 2. the result is resampled at even spacing,
-    /// 3. a cyclic Catmull-Rom spline through those samples gives the final frames.
+    /// 3. a cyclic Catmull-Rom spline through those samples gives the final frames,
+    /// 4. the whole loop is lifted, if needed, so it never sinks into the ground.
     /// Even spacing is what keeps Catmull-Rom from overshooting into kinks.
     pub fn new(points: Vec<Vec3>, width: f32) -> Self {
         let control = resample_loop(&fillet_corners(&points, Self::CORNER_RADIUS), Self::CONTROL_SPACING);
@@ -94,12 +100,18 @@ impl TrackPath {
             .to_curve_cyclic()
             .expect("track needs at least two control points");
         let count = control.len() * Self::SAMPLES_PER_SEGMENT;
-        let frames = (0..count)
+        let mut frames: Vec<TrackFrame> = (0..count)
             .map(|i| {
                 let t = i as f32 / Self::SAMPLES_PER_SEGMENT as f32;
                 TrackFrame::new(curve.position(t), curve.velocity(t))
             })
             .collect();
+        // Lifting the whole loop keeps every crossing's relative headroom intact.
+        let lowest = frames.iter().map(|frame| frame.position.y).fold(f32::MAX, f32::min);
+        let lift = (Self::GROUND_TOP + Self::GROUND_CLEARANCE + Self::ROAD_THICKNESS - lowest).max(0.0);
+        for frame in &mut frames {
+            frame.position.y += lift;
+        }
         Self { width, frames }
     }
 
@@ -256,6 +268,15 @@ mod tests {
             }
         }
         assert!(tightest > 4.0, "only {tightest:.2} units between stacked road sections");
+    }
+
+    #[test]
+    fn road_stays_above_the_ground() {
+        let path = TrackPath::default();
+        for (i, frame) in path.frames.iter().enumerate() {
+            let underside = frame.position.y - TrackPath::ROAD_THICKNESS;
+            assert!(underside > TrackPath::GROUND_TOP, "road dips into the ground at sample {i} ({:?})", frame.position);
+        }
     }
 
     #[test]

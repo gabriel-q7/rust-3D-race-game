@@ -2,7 +2,6 @@ use bevy::{asset::RenderAssetUsages, math::primitives::Cuboid, mesh::{Indices, P
 
 use crate::{components::{FinishLine, TrackMarker}, resources::{TrackFrame, TrackPath}};
 
-pub const ROAD_THICKNESS: f32 = 0.35;
 const RAIL_WIDTH: f32 = 0.22;
 const RAIL_HEIGHT: f32 = 0.55;
 
@@ -27,7 +26,7 @@ fn spawn_track(
     // The whole loop is one continuous extrusion, so there are no seams or
     // steps between segments for the car to bump into.
     let half = path.width * 0.5;
-    commands.spawn((Mesh3d(meshes.add(extrude(&path.frames, &rect(-half, half, -ROAD_THICKNESS, 0.0)))), MeshMaterial3d(road), TrackMarker));
+    commands.spawn((Mesh3d(meshes.add(extrude(&path.frames, &rect(-half, half, -TrackPath::ROAD_THICKNESS, 0.0)))), MeshMaterial3d(road), TrackMarker));
     for (offset, material) in [(-1.0, cyan.clone()), (1.0, pink)] {
         let x = offset * half;
         let profile = rect(x - RAIL_WIDTH * 0.5, x + RAIL_WIDTH * 0.5, 0.0, RAIL_HEIGHT);
@@ -36,7 +35,7 @@ fn spawn_track(
 
     // Repeated overhead frames make the high sections read as bridges/tunnels.
     let frame_mesh = meshes.add(Cuboid::new(path.width + 1.0, 0.25, 0.25));
-    for frame in path.frames.iter().step_by((8.0 / TrackPath::FRAME_SPACING) as usize).filter(|frame| frame.position.y > 8.0) {
+    for frame in path.frames.iter().step_by((8.0 / TrackPath::FRAME_SPACING) as usize).filter(|frame| frame.position.y - TrackPath::GROUND_TOP > 12.0) {
         commands.spawn((Mesh3d(frame_mesh.clone()), MeshMaterial3d(cyan.clone()), Transform { translation: frame.position + frame.normal * 4.0, rotation: frame_rotation(frame), ..default() }, TrackMarker));
     }
 

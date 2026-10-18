@@ -31,7 +31,7 @@ fn spawn_player(mut commands: Commands, path: Res<TrackPath>, mut meshes: ResMut
     let headlight = materials.add(StandardMaterial { base_color: Color::srgb(0.7, 0.95, 1.0), emissive: LinearRgba::new(0.3, 0.9, 1.0, 1.0), ..default() });
     let taillight = materials.add(StandardMaterial { base_color: Color::srgb(1.0, 0.02, 0.03), emissive: LinearRgba::new(1.0, 0.0, 0.0, 1.0), ..default() });
     let wheel = materials.add(Color::srgb(0.015, 0.01, 0.03));
-    let entity = commands.spawn((Player, CarBody, DriveState { speed: 0.0, previous_position: start, track_index: Some(0) }, Transform { translation: start, rotation, ..default() }, GlobalTransform::default())).id();
+    let entity = commands.spawn((Player, CarBody, DriveState { speed: 0.0, previous_position: start, track_index: Some(0) }, Transform { translation: start, rotation, ..default() }, Visibility::default())).id();
     commands.entity(entity).with_children(|parent| {
         parent.spawn((Mesh3d(meshes.add(Cuboid::new(CAR_WIDTH, 0.65, CAR_LENGTH))), MeshMaterial3d(body), Transform::from_xyz(0.0, 0.0, 0.0)));
         parent.spawn((Mesh3d(meshes.add(Cuboid::new(1.35, 0.62, 1.45))), MeshMaterial3d(glass), Transform::from_xyz(0.0, 0.52, 0.15)));

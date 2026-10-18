@@ -12,6 +12,7 @@ impl Plugin for GamePlugin {
             .init_resource::<crate::resources::RaceProgress>()
             .add_plugins((
                 world::EnvironmentPlugin,
+                world::BackdropPlugin,
                 systems::track::TrackPlugin,
                 systems::player::PlayerPlugin,
                 systems::camera::CameraPlugin,
