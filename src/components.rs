@@ -3,15 +3,6 @@ use bevy::prelude::*;
 #[derive(Component)]
 pub struct Player;
 
-#[derive(Component, Default)]
-pub struct CarBody;
-
-#[derive(Component)]
-pub struct Wheel {
-    pub front: bool,
-    pub spin: f32,
-}
-
 #[derive(Component)]
 pub struct FollowCamera;
 
@@ -45,10 +36,14 @@ pub struct DriveState {
     pub previous_position: Vec3,
     /// Last track sample the car was projected onto; keeps the search local.
     pub track_index: Option<usize>,
+    /// Smoothed steering input in `-1..=1` (positive = right).
+    pub steer: f32,
+    /// Raw throttle input: 1 accelerate, -1 brake/reverse, 0 coast.
+    pub throttle: f32,
 }
 
 impl Default for DriveState {
     fn default() -> Self {
-        Self { speed: 0.0, previous_position: Vec3::ZERO, track_index: None }
+        Self { speed: 0.0, previous_position: Vec3::ZERO, track_index: None, steer: 0.0, throttle: 0.0 }
     }
 }

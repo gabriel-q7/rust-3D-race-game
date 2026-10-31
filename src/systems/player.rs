@@ -1,51 +1,44 @@
-use bevy::{math::primitives::{Cuboid, Cylinder}, prelude::*};
+use bevy::prelude::*;
 
-use crate::{components::{CarBody, DriveState, Player, Wheel}, resources::{GameState, TrackPath}};
+use crate::{
+    components::{DriveState, Player},
+    resources::{GameState, TrackPath},
+    systems::ship::{self, EngineState, HOVER_HEIGHT, SHIP_WIDTH},
+};
 
-// Car convention: width X, height Y, length Z, visual front is local -Z.
-pub const CAR_LENGTH: f32 = 3.6;
-pub const CAR_WIDTH: f32 = 1.8;
-pub const WHEEL_RADIUS: f32 = 0.42;
-pub const WHEEL_X: f32 = 1.08;
-pub const WHEEL_Z: f32 = 1.12;
-pub const MAX_STEERING_ANGLE: f32 = 0.48;
-const MAX_SPEED: f32 = 24.0;
-const REVERSE_SPEED: f32 = 8.0;
-/// Distance from the road surface to the car origin (wheels rest on the road).
-const RIDE_HEIGHT: f32 = 0.9;
+// Arcade tuning for the wide track. 1 unit ≈ 1 m, so 55 m/s ≈ 198 km/h.
+pub const MAX_SPEED: f32 = 55.0;
+const REVERSE_SPEED: f32 = 14.0;
+const ACCELERATION: f32 = 26.0;
+const BRAKING: f32 = 45.0;
+/// Deceleration while coasting.
+const DRAG: f32 = 12.0;
+/// Yaw rate (rad/s) at full steering and speed; at top speed this gives a
+/// turning radius of MAX_SPEED / STEER_RATE ≈ 32 m, inside the track's corners.
+const STEER_RATE: f32 = 1.7;
+/// Fraction of steering kept when nearly stopped, so the ship can still turn in place-ish.
+const MIN_STEER_FACTOR: f32 = 0.25;
+/// How fast steering input ramps (per second); smooths keyboard on/off.
+const STEER_RESPONSE: f32 = 7.0;
+/// Extra gap kept between the wingtips and the rails.
+const RAIL_MARGIN: f32 = 0.4;
 
 pub struct PlayerPlugin;
 impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, spawn_player)
-            .add_systems(Update, (drive_player, animate_wheels).chain().run_if(in_state(GameState::Racing)))
-            .add_systems(OnEnter(GameState::Countdown), (reset_player, reset_wheels));
+            .add_systems(Update, drive_player.run_if(in_state(GameState::Racing)))
+            .add_systems(OnEnter(GameState::Countdown), reset_player)
+            .add_systems(OnExit(GameState::Racing), release_controls);
     }
 }
 
 fn spawn_player(mut commands: Commands, path: Res<TrackPath>, mut meshes: ResMut<Assets<Mesh>>, mut materials: ResMut<Assets<StandardMaterial>>) {
     let (start, rotation) = start_pose(&path);
-    let body = materials.add(Color::srgb(0.25, 0.04, 0.55));
-    let glass = materials.add(Color::srgb(0.03, 0.4, 0.65));
-    let neon = materials.add(StandardMaterial { base_color: Color::srgb(1.0, 0.05, 0.5), emissive: LinearRgba::new(1.0, 0.0, 0.3, 1.0), ..default() });
-    let headlight = materials.add(StandardMaterial { base_color: Color::srgb(0.7, 0.95, 1.0), emissive: LinearRgba::new(0.3, 0.9, 1.0, 1.0), ..default() });
-    let taillight = materials.add(StandardMaterial { base_color: Color::srgb(1.0, 0.02, 0.03), emissive: LinearRgba::new(1.0, 0.0, 0.0, 1.0), ..default() });
-    let wheel = materials.add(Color::srgb(0.015, 0.01, 0.03));
-    let entity = commands.spawn((Player, CarBody, DriveState { speed: 0.0, previous_position: start, track_index: Some(0) }, Transform { translation: start, rotation, ..default() }, Visibility::default())).id();
-    commands.entity(entity).with_children(|parent| {
-        parent.spawn((Mesh3d(meshes.add(Cuboid::new(CAR_WIDTH, 0.65, CAR_LENGTH))), MeshMaterial3d(body), Transform::from_xyz(0.0, 0.0, 0.0)));
-        parent.spawn((Mesh3d(meshes.add(Cuboid::new(1.35, 0.62, 1.45))), MeshMaterial3d(glass), Transform::from_xyz(0.0, 0.52, 0.15)));
-        parent.spawn((Mesh3d(meshes.add(Cuboid::new(CAR_WIDTH + 0.12, 0.1, CAR_LENGTH + 0.1))), MeshMaterial3d(neon), Transform::from_xyz(0.0, -0.33, 0.0)));
-        for x in [-0.58, 0.58] {
-            parent.spawn((Mesh3d(meshes.add(Cuboid::new(0.28, 0.16, 0.12))), MeshMaterial3d(headlight.clone()), Transform::from_xyz(x, 0.02, -CAR_LENGTH * 0.5 - 0.02)));
-            parent.spawn((Mesh3d(meshes.add(Cuboid::new(0.28, 0.16, 0.12))), MeshMaterial3d(taillight.clone()), Transform::from_xyz(x, 0.02, CAR_LENGTH * 0.5 + 0.02)));
-        }
-        for (front, z) in [(true, -WHEEL_Z), (false, WHEEL_Z)] {
-            for x in [-WHEEL_X, WHEEL_X] {
-                parent.spawn((Wheel { front, spin: 0.0 }, Mesh3d(meshes.add(Cylinder::new(WHEEL_RADIUS, 0.28))), MeshMaterial3d(wheel.clone()), Transform { translation: Vec3::new(x, -0.43, z), rotation: Quat::from_rotation_z(std::f32::consts::FRAC_PI_2), ..default() }));
-            }
-        }
-    });
+    let entity = commands
+        .spawn((Player, DriveState { previous_position: start, track_index: Some(0), ..default() }, EngineState::default(), Transform { translation: start, rotation, ..default() }, Visibility::default()))
+        .id();
+    ship::spawn_ship(&mut commands, entity, &mut meshes, &mut materials);
 }
 
 fn reset_player(path: Res<TrackPath>, mut query: Query<(&mut Transform, &mut DriveState), With<Player>>) {
@@ -53,69 +46,112 @@ fn reset_player(path: Res<TrackPath>, mut query: Query<(&mut Transform, &mut Dri
         let (start, rotation) = start_pose(&path);
         transform.translation = start;
         transform.rotation = rotation;
-        drive.speed = 0.0;
-        drive.previous_position = start;
-        drive.track_index = Some(0);
+        *drive = DriveState { previous_position: start, track_index: Some(0), ..default() };
+    }
+}
+
+/// Drops inputs when the race ends so engines idle and the ship levels out.
+fn release_controls(mut query: Query<&mut DriveState, With<Player>>) {
+    if let Ok(mut drive) = query.single_mut() {
+        drive.throttle = 0.0;
+        drive.steer = 0.0;
     }
 }
 
 fn start_pose(path: &TrackPath) -> (Vec3, Quat) {
     let frame = path.frames[0];
-    (frame.position + frame.normal * RIDE_HEIGHT, Transform::IDENTITY.looking_to(frame.tangent, frame.normal).rotation)
+    (frame.position + frame.normal * HOVER_HEIGHT, Transform::IDENTITY.looking_to(frame.tangent, frame.normal).rotation)
 }
 
 fn drive_player(time: Res<Time>, keys: Res<ButtonInput<KeyCode>>, path: Res<TrackPath>, mut query: Query<(&mut Transform, &mut DriveState), With<Player>>) {
     let Ok((mut transform, mut drive)) = query.single_mut() else { return };
-    let throttle = if keys.pressed(KeyCode::KeyW) || keys.pressed(KeyCode::ArrowUp) { 1.0 } else if keys.pressed(KeyCode::KeyS) || keys.pressed(KeyCode::ArrowDown) { -1.0 } else { 0.0 };
-    let steering = (keys.pressed(KeyCode::KeyD) || keys.pressed(KeyCode::ArrowRight)) as i8 - (keys.pressed(KeyCode::KeyA) || keys.pressed(KeyCode::ArrowLeft)) as i8;
-    let dt = time.delta_secs();
-    if throttle > 0.0 { drive.speed = (drive.speed + 18.0 * dt).min(MAX_SPEED); }
-    else if throttle < 0.0 { drive.speed = (drive.speed - 22.0 * dt).max(-REVERSE_SPEED); }
-    else { drive.speed = move_towards(drive.speed, 0.0, 10.0 * dt); }
-    let steering_strength = (drive.speed.abs() / MAX_SPEED).clamp(0.15, 1.0);
-    // Steer around the car's own up axis so turning stays correct on slopes.
+    let pressed = |a: KeyCode, b: KeyCode| keys.pressed(a) || keys.pressed(b);
+    let throttle = if pressed(KeyCode::KeyW, KeyCode::ArrowUp) { 1.0 } else if pressed(KeyCode::KeyS, KeyCode::ArrowDown) { -1.0 } else { 0.0 };
+    let steer_input = pressed(KeyCode::KeyD, KeyCode::ArrowRight) as i8 as f32 - pressed(KeyCode::KeyA, KeyCode::ArrowLeft) as i8 as f32;
+    advance(&path, &mut transform, &mut drive, throttle, steer_input, time.delta_secs());
+}
+
+/// One movement step from raw inputs; pure so tests can drive the ship headless.
+fn advance(path: &TrackPath, transform: &mut Transform, drive: &mut DriveState, throttle: f32, steer_input: f32, dt: f32) {
+    drive.throttle = throttle;
+    drive.steer = move_towards(drive.steer, steer_input, STEER_RESPONSE * dt);
+
+    if throttle > 0.0 { drive.speed = (drive.speed + ACCELERATION * dt).min(MAX_SPEED); }
+    else if throttle < 0.0 { drive.speed = (drive.speed - BRAKING * dt).max(-REVERSE_SPEED); }
+    else { drive.speed = move_towards(drive.speed, 0.0, DRAG * dt); }
+
+    let steering_strength = (drive.speed.abs() / MAX_SPEED).clamp(MIN_STEER_FACTOR, 1.0);
+    // Steer around the ship's own up axis so turning stays correct on slopes.
     let up = transform.up();
-    transform.rotate_axis(up, -(steering as f32) * 1.8 * steering_strength * dt * drive.speed.signum());
+    transform.rotate_axis(up, -drive.steer * STEER_RATE * steering_strength * dt * drive.speed.signum());
     drive.previous_position = transform.translation;
     let forward = *transform.forward();
     transform.translation += forward * drive.speed * dt;
-    keep_car_on_track(&path, &mut transform, &mut drive);
+    keep_ship_on_track(path, transform, drive);
 }
 
-/// Glues the car to the road surface: clamps it between the rails, sets its
-/// height from the spline and tilts it to follow slopes.
-fn keep_car_on_track(path: &TrackPath, transform: &mut Transform, drive: &mut DriveState) {
+/// Glues the ship to the road surface: clamps it between the rails, sets its
+/// hover height from the spline and tilts it to follow slopes.
+fn keep_ship_on_track(path: &TrackPath, transform: &mut Transform, drive: &mut DriveState) {
     let hit = path.closest(transform.translation, drive.track_index);
     drive.track_index = Some(hit.index);
     let frame = hit.frame;
     let lateral = (transform.translation - frame.position).dot(frame.side);
-    let safe_half_width = path.width * 0.5 - CAR_WIDTH * 0.55;
+    let safe_half_width = path.width * 0.5 - SHIP_WIDTH * 0.5 - RAIL_MARGIN;
     let clamped_lateral = lateral.clamp(-safe_half_width, safe_half_width);
-    transform.translation = frame.position + frame.side * clamped_lateral + frame.normal * RIDE_HEIGHT;
+    transform.translation = frame.position + frame.side * clamped_lateral + frame.normal * HOVER_HEIGHT;
     let heading = transform.forward().reject_from_normalized(frame.normal).normalize_or(frame.tangent);
     transform.rotation = Transform::IDENTITY.looking_to(heading, frame.normal).rotation;
 }
 
-fn animate_wheels(time: Res<Time>, keys: Res<ButtonInput<KeyCode>>, player: Query<(&DriveState, &Transform), With<Player>>, mut wheels: Query<(&mut Transform, &mut Wheel), Without<Player>>) {
-    let Ok((drive, car)) = player.single() else { return };
-    let steering = (keys.pressed(KeyCode::KeyD) || keys.pressed(KeyCode::ArrowRight)) as i8 - (keys.pressed(KeyCode::KeyA) || keys.pressed(KeyCode::ArrowLeft)) as i8;
-    let steer_angle = -(steering as f32) * MAX_STEERING_ANGLE;
-    let signed_distance = (car.translation - drive.previous_position).dot(*car.forward());
-    for (mut transform, mut wheel) in &mut wheels {
-        wheel.spin += signed_distance / WHEEL_RADIUS;
-        let steer = if wheel.front { Quat::from_rotation_y(steer_angle) } else { Quat::IDENTITY };
-        transform.rotation = steer * Quat::from_rotation_z(std::f32::consts::FRAC_PI_2) * Quat::from_rotation_x(wheel.spin);
-    }
-    let _ = time;
-}
-
-fn reset_wheels(mut wheels: Query<(&mut Transform, &mut Wheel)>) {
-    for (mut transform, mut wheel) in &mut wheels {
-        wheel.spin = 0.0;
-        transform.rotation = Quat::from_rotation_z(std::f32::consts::FRAC_PI_2);
-    }
-}
-
 fn move_towards(value: f32, target: f32, amount: f32) -> f32 {
     if (value - target).abs() <= amount { target } else { value + (target - value).signum() * amount }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Headless lap with a simple autopilot that only uses the real controls
+    /// (full throttle, digital steering, braking when badly misaligned).
+    /// Proves the circuit is completable with the current tuning and width.
+    #[test]
+    fn autopilot_completes_a_lap() {
+        let path = TrackPath::default();
+        let count = path.frames.len();
+        let (start, rotation) = start_pose(&path);
+        let mut transform = Transform { translation: start, rotation, ..default() };
+        let mut drive = DriveState { previous_position: start, track_index: Some(0), ..default() };
+        let dt = 1.0 / 60.0;
+        let mut progressed = 0usize;
+        let mut last_index = 0usize;
+        let mut rail_frames = 0usize;
+        let safe_half_width = path.width * 0.5 - SHIP_WIDTH * 0.5 - RAIL_MARGIN;
+        for step in 0..60 * 120 {
+            let index = drive.track_index.unwrap();
+            // Aim at a point ahead on the centerline.
+            let target = path.frames[(index + 25) % count].position;
+            let to_target = (target - transform.translation).reject_from_normalized(*transform.up()).normalize_or_zero();
+            let side = to_target.dot(*transform.right());
+            let alignment = to_target.dot(*transform.forward());
+            let steer = if side > 0.05 { 1.0 } else if side < -0.05 { -1.0 } else { 0.0 };
+            let throttle = if alignment < 0.8 && drive.speed > 25.0 { -1.0 } else { 1.0 };
+            advance(&path, &mut transform, &mut drive, throttle, steer, dt);
+
+            let new_index = drive.track_index.unwrap();
+            let delta = (new_index + count - last_index) % count;
+            assert!(delta < count / 2, "ship went backwards or jumped at step {step}: {last_index} -> {new_index}");
+            progressed += delta;
+            last_index = new_index;
+            let lateral = (transform.translation - path.frames[new_index].position).dot(path.frames[new_index].side).abs();
+            if lateral > safe_half_width - 0.05 { rail_frames += 1; }
+            if progressed >= count {
+                // Scraping the rails briefly is fine; riding them for most of the lap is not.
+                assert!(rail_frames < step / 5, "ship rode the rails for {rail_frames} of {step} frames");
+                println!("lap in {:.1}s, {rail_frames} frames on the rails", step as f32 * dt);
+                return;
+            }
+        }
+        panic!("lap not finished in 120 s; reached {progressed} of {count} samples");
+    }
 }

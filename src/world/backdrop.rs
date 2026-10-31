@@ -19,8 +19,8 @@ use crate::{components::FollowCamera, resources::TrackPath};
 pub const HORIZON: Color = Color::srgb(0.85, 0.18, 0.55);
 const ZENITH: Color = Color::srgb(0.03, 0.0, 0.1);
 /// Ground and fog fade between these distances from the camera.
-pub const FADE_START: f32 = 90.0;
-pub const FADE_END: f32 = 520.0;
+pub const FADE_START: f32 = 170.0;
+pub const FADE_END: f32 = 720.0;
 /// Must stay inside the camera's far plane (1000 by default).
 const SKY_RADIUS: f32 = 800.0;
 
@@ -101,7 +101,7 @@ fn spawn_backdrop(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut 
         base: Color::srgb(0.02, 0.0, 0.05).into(),
         line: LinearRgba::rgb(0.2, 1.6, 2.2),
         horizon: HORIZON.into(),
-        params: Vec4::new(10.0, 1.2, FADE_START, FADE_END),
+        params: Vec4::new(20.0, 1.2, FADE_START, FADE_END),
     });
     let size = SKY_RADIUS * 2.0;
     commands.spawn((Mesh3d(meshes.add(Plane3d::default().mesh().size(size, size))), MeshMaterial3d(ground), Transform::from_xyz(0.0, TrackPath::GROUND_TOP, 0.0), CameraAnchored, NotShadowCaster));

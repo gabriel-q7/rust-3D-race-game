@@ -78,8 +78,15 @@ impl TrackPath {
     /// Minimum gap between the road's underside and the ground.
     const GROUND_CLEARANCE: f32 = 0.5;
     pub const ROAD_THICKNESS: f32 = 0.35;
+    /// Road width; wide enough for side-by-side manoeuvring with the ship.
+    pub const WIDTH: f32 = 27.0;
+    /// The hand-written layout is authored small and scaled up: XZ spreads the
+    /// circuit out, a smaller height scale keeps slopes gentle while still
+    /// leaving generous clearance where sections cross.
+    const LAYOUT_SCALE: f32 = 3.0;
+    const HEIGHT_SCALE: f32 = 1.6;
     /// Target radius for rounded corners, measured on the centerline.
-    pub const CORNER_RADIUS: f32 = 12.0;
+    pub const CORNER_RADIUS: f32 = 36.0;
     /// Distance between spline control points after resampling.
     const CONTROL_SPACING: f32 = 3.0;
     /// Spline samples per control segment; frames end up ~1 unit apart.
@@ -115,6 +122,12 @@ impl TrackPath {
         Self { width, frames }
     }
 
+    /// Horizontal distance from `point` to the nearest centerline sample. Used at
+    /// startup to keep decorations off the road; not meant for per-frame use.
+    pub fn horizontal_clearance(&self, point: Vec3) -> f32 {
+        self.frames.iter().map(|frame| horizontal(frame.position - point).length()).fold(f32::MAX, f32::min)
+    }
+
     /// Projects `position` onto the centerline. With a `hint` (the previous
     /// hit index) only nearby samples are searched, so stacked sections such
     /// as bridges and underpasses never steal the car.
@@ -146,26 +159,25 @@ impl Default for TrackPath {
     fn default() -> Self {
         // The route deliberately revisits similar X/Z positions at different
         // heights, creating bridges, underpasses, and genuine 3D crossings.
-        Self::new(
-            vec![
-                Vec3::new(0.0, 1.0, -62.0), Vec3::new(0.0, 1.0, -35.0),
-                Vec3::new(18.0, 8.0, -20.0), Vec3::new(44.0, 8.0, -20.0),
-                Vec3::new(56.0, 11.0, -4.0), Vec3::new(56.0, 11.0, 28.0),
-                Vec3::new(38.0, 16.0, 47.0), Vec3::new(4.0, 16.0, 47.0),
-                Vec3::new(-14.0, 12.0, 28.0), Vec3::new(-36.0, 11.0, 33.0),
-                Vec3::new(-60.0, 10.0, 32.0), Vec3::new(-62.0, 10.0, 10.0),
-                Vec3::new(-38.0, 9.0, 10.0),
-                Vec3::new(16.0, 9.0, 10.0), Vec3::new(35.0, 3.0, -4.0),
-                Vec3::new(35.0, 3.0, -34.0), Vec3::new(12.0, -4.0, -49.0),
-                Vec3::new(-20.0, -4.0, -49.0), Vec3::new(-34.0, -3.0, -29.0),
-                Vec3::new(4.0, -3.0, -14.0), Vec3::new(28.0, -3.0, -10.0),
-                Vec3::new(30.0, -3.0, 10.0), Vec3::new(10.0, -3.0, 13.0),
-                Vec3::new(-19.0, -3.0, 10.0),
-                Vec3::new(-42.0, 1.0, -8.0), Vec3::new(-42.0, 1.0, -43.0),
-                Vec3::new(-20.0, 1.0, -62.0),
-            ],
-            9.0,
-        )
+        let layout = vec![
+            Vec3::new(0.0, 1.0, -62.0), Vec3::new(0.0, 1.0, -35.0),
+            Vec3::new(18.0, 8.0, -20.0), Vec3::new(44.0, 8.0, -20.0),
+            Vec3::new(56.0, 11.0, -4.0), Vec3::new(56.0, 11.0, 28.0),
+            Vec3::new(38.0, 16.0, 47.0), Vec3::new(4.0, 16.0, 47.0),
+            Vec3::new(-14.0, 12.0, 28.0), Vec3::new(-36.0, 11.0, 33.0),
+            Vec3::new(-60.0, 10.0, 32.0), Vec3::new(-62.0, 10.0, 10.0),
+            Vec3::new(-38.0, 9.0, 10.0),
+            Vec3::new(16.0, 9.0, 10.0), Vec3::new(35.0, 3.0, -4.0),
+            Vec3::new(35.0, 3.0, -34.0), Vec3::new(12.0, -4.0, -49.0),
+            Vec3::new(-16.0, -4.0, -52.0), Vec3::new(-34.0, -3.0, -29.0),
+            Vec3::new(4.0, -3.0, -14.0), Vec3::new(28.0, -3.0, -10.0),
+            Vec3::new(30.0, -3.0, 10.0), Vec3::new(10.0, -3.0, 13.0),
+            Vec3::new(-19.0, -3.0, 10.0),
+            Vec3::new(-42.0, 1.0, -8.0), Vec3::new(-42.0, 1.0, -43.0),
+            Vec3::new(-20.0, 1.0, -62.0),
+        ];
+        let scale = Vec3::new(Self::LAYOUT_SCALE, Self::HEIGHT_SCALE, Self::LAYOUT_SCALE);
+        Self::new(layout.into_iter().map(|point| point * scale).collect(), Self::WIDTH)
     }
 }
 
@@ -237,6 +249,10 @@ fn resample_loop(polyline: &[Vec3], spacing: f32) -> Vec<Vec3> {
 mod tests {
     use super::*;
 
+    /// Minimum vertical gap between stacked road sections (surface to surface):
+    /// hover height + ship height + road thickness, with room to spare.
+    const MIN_HEADROOM: f32 = 6.5;
+
     #[test]
     fn corners_are_wide_enough_for_the_road() {
         let path = TrackPath::default();
@@ -267,7 +283,7 @@ mod tests {
                 }
             }
         }
-        assert!(tightest > 4.0, "only {tightest:.2} units between stacked road sections");
+        assert!(tightest > MIN_HEADROOM, "only {tightest:.2} units between stacked road sections");
     }
 
     #[test]

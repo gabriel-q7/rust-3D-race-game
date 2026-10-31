@@ -1,9 +1,14 @@
 use bevy::{asset::RenderAssetUsages, math::primitives::Cuboid, mesh::{Indices, PrimitiveTopology}, prelude::*};
 
-use crate::{components::{FinishLine, TrackMarker}, resources::{TrackFrame, TrackPath}};
+use crate::{components::{FinishLine, TrackMarker}, resources::{TrackFrame, TrackPath}, world::animation::Pulsating};
 
-const RAIL_WIDTH: f32 = 0.22;
-const RAIL_HEIGHT: f32 = 0.55;
+const RAIL_WIDTH: f32 = 0.5;
+const RAIL_HEIGHT: f32 = 0.9;
+/// Overhead gantries on high sections: spacing along the road, clearance above it,
+/// and the minimum height above ground where they appear.
+const GANTRY_SPACING: f32 = 30.0;
+const GANTRY_CLEARANCE: f32 = 8.0;
+const GANTRY_MIN_HEIGHT: f32 = 24.0;
 
 pub struct TrackPlugin;
 
@@ -33,23 +38,30 @@ fn spawn_track(
         commands.spawn((Mesh3d(meshes.add(extrude(&path.frames, &profile))), MeshMaterial3d(material), TrackMarker));
     }
 
-    // Repeated overhead frames make the high sections read as bridges/tunnels.
-    let frame_mesh = meshes.add(Cuboid::new(path.width + 1.0, 0.25, 0.25));
-    for frame in path.frames.iter().step_by((8.0 / TrackPath::FRAME_SPACING) as usize).filter(|frame| frame.position.y - TrackPath::GROUND_TOP > 12.0) {
-        commands.spawn((Mesh3d(frame_mesh.clone()), MeshMaterial3d(cyan.clone()), Transform { translation: frame.position + frame.normal * 4.0, rotation: frame_rotation(frame), ..default() }, TrackMarker));
+    // Repeated overhead gantries make the high sections read as bridges.
+    let gantry = meshes.add(Cuboid::new(path.width + 2.0 * RAIL_WIDTH, 0.4, 0.4));
+    for frame in path.frames.iter().step_by((GANTRY_SPACING / TrackPath::FRAME_SPACING) as usize).filter(|frame| frame.position.y - TrackPath::GROUND_TOP > GANTRY_MIN_HEIGHT) {
+        commands.spawn((Mesh3d(gantry.clone()), MeshMaterial3d(cyan.clone()), Transform { translation: frame.position + frame.normal * GANTRY_CLEARANCE, rotation: frame_rotation(frame), ..default() }, TrackMarker));
     }
 
     let line_material = materials.add(StandardMaterial { base_color: Color::WHITE, emissive: LinearRgba::new(1.0, 0.3, 0.8, 1.0), ..default() });
     let start = path.frames[0];
     let gate_rotation = frame_rotation(&start);
-    let line_mesh = meshes.add(Cuboid::new(path.width, 0.04, 0.7));
+    let line_mesh = meshes.add(Cuboid::new(path.width, 0.04, 1.4));
     commands.spawn((Mesh3d(line_mesh), MeshMaterial3d(line_material), Transform { translation: start.position + start.normal * 0.02, rotation: gate_rotation, ..default() }, FinishLine));
 
     // Small start markers make the gate legible from the chase camera.
-    let marker = meshes.add(Cuboid::new(0.35, 4.0, 0.35));
+    let marker = meshes.add(Cuboid::new(0.6, 14.0, 0.6));
     for side in [-1.0, 1.0] {
-        commands.spawn((Mesh3d(marker.clone()), MeshMaterial3d(cyan.clone()), Transform { translation: start.position + start.side * side * path.width * 0.5 + Vec3::Y * 2.0, rotation: gate_rotation, ..default() }, TrackMarker));
+        commands.spawn((Mesh3d(marker.clone()), MeshMaterial3d(cyan.clone()), Transform { translation: start.position + start.side * side * (path.width * 0.5 + RAIL_WIDTH + 0.4) + Vec3::Y * 7.0, rotation: gate_rotation, ..default() }, TrackMarker));
     }
+    let banner = meshes.add(Cuboid::new(path.width + 2.0 * RAIL_WIDTH + 1.4, 0.35, 0.35));
+    commands.spawn((Mesh3d(banner), MeshMaterial3d(pink_banner(&mut materials)), Transform { translation: start.position + Vec3::Y * 14.0, rotation: gate_rotation, ..default() }, TrackMarker, Pulsating::new(0.45, 0.8, 0.0)));
+}
+
+/// Own material so the start banner can pulse without affecting the rails.
+fn pink_banner(materials: &mut Assets<StandardMaterial>) -> Handle<StandardMaterial> {
+    materials.add(StandardMaterial { base_color: Color::srgb(1.0, 0.03, 0.45), emissive: LinearRgba::new(2.0, 0.0, 0.6, 1.0), ..default() })
 }
 
 /// Rotation that maps local X to the frame side, Y to its normal and -Z to its tangent.
@@ -79,7 +91,7 @@ fn extrude(frames: &[TrackFrame], profile: &[Vec2]) -> Mesh {
             let frame = &frames[ring % frames.len()];
             let to_world = |v: Vec2| frame.position + frame.side * v.x + frame.normal * v.y;
             let normal = (frame.side * outward.x + frame.normal * outward.y).to_array();
-            let v = ring as f32 * TrackPath::FRAME_SPACING / 8.0;
+            let v = ring as f32 * TrackPath::FRAME_SPACING / 24.0;
             positions.extend([to_world(p).to_array(), to_world(q).to_array()]);
             normals.extend([normal, normal]);
             uvs.extend([[0.0, v], [1.0, v]]);

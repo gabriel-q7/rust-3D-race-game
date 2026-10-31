@@ -13,8 +13,10 @@ impl Plugin for GamePlugin {
             .add_plugins((
                 world::EnvironmentPlugin,
                 world::BackdropPlugin,
+                world::AnimationPlugin,
                 systems::track::TrackPlugin,
                 systems::player::PlayerPlugin,
+                systems::ship::ShipPlugin,
                 systems::camera::CameraPlugin,
                 systems::race::RacePlugin,
                 systems::ui::UiPlugin,
