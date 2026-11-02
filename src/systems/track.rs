@@ -40,7 +40,7 @@ fn spawn_track(
 
     // Repeated overhead gantries make the high sections read as bridges.
     let gantry = meshes.add(Cuboid::new(path.width + 2.0 * RAIL_WIDTH, 0.4, 0.4));
-    for frame in path.frames.iter().step_by((GANTRY_SPACING / TrackPath::FRAME_SPACING) as usize).filter(|frame| frame.position.y - TrackPath::GROUND_TOP > GANTRY_MIN_HEIGHT) {
+    for frame in gantry_frames(&path) {
         commands.spawn((Mesh3d(gantry.clone()), MeshMaterial3d(cyan.clone()), Transform { translation: frame.position + frame.normal * GANTRY_CLEARANCE, rotation: frame_rotation(frame), ..default() }, TrackMarker));
     }
 
@@ -57,6 +57,11 @@ fn spawn_track(
     }
     let banner = meshes.add(Cuboid::new(path.width + 2.0 * RAIL_WIDTH + 1.4, 0.35, 0.35));
     commands.spawn((Mesh3d(banner), MeshMaterial3d(pink_banner(&mut materials)), Transform { translation: start.position + Vec3::Y * 14.0, rotation: gate_rotation, ..default() }, TrackMarker, Pulsating::new(0.45, 0.8, 0.0)));
+}
+
+/// Track samples that carry an overhead gantry (high sections only).
+pub fn gantry_frames(path: &TrackPath) -> impl Iterator<Item = &TrackFrame> {
+    path.frames.iter().step_by((GANTRY_SPACING / TrackPath::FRAME_SPACING) as usize).filter(|frame| frame.position.y - TrackPath::GROUND_TOP > GANTRY_MIN_HEIGHT)
 }
 
 /// Own material so the start banner can pulse without affecting the rails.

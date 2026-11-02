@@ -23,11 +23,15 @@ const STEER_RESPONSE: f32 = 7.0;
 /// Extra gap kept between the wingtips and the rails.
 const RAIL_MARGIN: f32 = 0.4;
 
+/// Movement systems; race logic and the camera run after this set.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct DriveSystems;
+
 pub struct PlayerPlugin;
 impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, spawn_player)
-            .add_systems(Update, drive_player.run_if(in_state(GameState::Racing)))
+            .add_systems(Update, drive_player.in_set(DriveSystems).run_if(in_state(GameState::Racing)))
             .add_systems(OnEnter(GameState::Countdown), reset_player)
             .add_systems(OnExit(GameState::Racing), release_controls);
     }
@@ -58,7 +62,7 @@ fn release_controls(mut query: Query<&mut DriveState, With<Player>>) {
     }
 }
 
-fn start_pose(path: &TrackPath) -> (Vec3, Quat) {
+pub(crate) fn start_pose(path: &TrackPath) -> (Vec3, Quat) {
     let frame = path.frames[0];
     (frame.position + frame.normal * HOVER_HEIGHT, Transform::IDENTITY.looking_to(frame.tangent, frame.normal).rotation)
 }
@@ -72,7 +76,7 @@ fn drive_player(time: Res<Time>, keys: Res<ButtonInput<KeyCode>>, path: Res<Trac
 }
 
 /// One movement step from raw inputs; pure so tests can drive the ship headless.
-fn advance(path: &TrackPath, transform: &mut Transform, drive: &mut DriveState, throttle: f32, steer_input: f32, dt: f32) {
+pub(crate) fn advance(path: &TrackPath, transform: &mut Transform, drive: &mut DriveState, throttle: f32, steer_input: f32, dt: f32) {
     drive.throttle = throttle;
     drive.steer = move_towards(drive.steer, steer_input, STEER_RESPONSE * dt);
 

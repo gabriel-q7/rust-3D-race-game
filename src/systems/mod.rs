@@ -1,4 +1,5 @@
 pub mod camera;
+pub mod perf;
 pub mod player;
 pub mod race;
 pub mod ship;

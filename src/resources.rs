@@ -27,9 +27,48 @@ pub struct RaceTimer {
     pub running: bool,
 }
 
+/// Checkpoints that must be passed, in order, before the finish line counts.
+pub const CHECKPOINT_COUNT: usize = 4;
+
+/// Lap progression. Progress is measured along the track (sample index from
+/// the ship's local track search), never by raw 3D distance, so sections that
+/// pass above or below each other can't be confused.
 #[derive(Resource, Default)]
 pub struct RaceProgress {
-    pub armed: bool,
+    pub checkpoints_passed: usize,
+    /// Track sample seen last frame; `None` right after a reset.
+    pub last_index: Option<usize>,
+    /// Latched once the finish registers, so it can only trigger once per race.
+    pub finished: bool,
+}
+
+impl RaceProgress {
+    /// Track sample index of checkpoint `n` (0-based), evenly spread around the loop.
+    pub fn checkpoint_index(track_len: usize, n: usize) -> usize {
+        (n + 1) * track_len / (CHECKPOINT_COUNT + 1)
+    }
+
+    pub fn all_checkpoints_passed(&self) -> bool {
+        self.checkpoints_passed >= CHECKPOINT_COUNT
+    }
+
+    /// Advances checkpoints when the ship moves forward past the next one.
+    /// Driving backwards never un-passes or skips a checkpoint.
+    pub fn track(&mut self, track_len: usize, index: usize) {
+        if let Some(last) = self.last_index {
+            let moved = (index + track_len - last) % track_len;
+            // Forward movement is small per frame; anything else is reversing.
+            if moved > 0 && moved < track_len / 4 {
+                while !self.all_checkpoints_passed() {
+                    let next = Self::checkpoint_index(track_len, self.checkpoints_passed);
+                    let ahead = (next + track_len - last) % track_len;
+                    if ahead == 0 || ahead > moved { break; }
+                    self.checkpoints_passed += 1;
+                }
+            }
+        }
+        self.last_index = Some(index);
+    }
 }
 
 /// One sample of the road centerline with its local orientation frame.
@@ -133,13 +172,14 @@ impl TrackPath {
     /// as bridges and underpasses never steal the car.
     pub fn closest(&self, position: Vec3, hint: Option<usize>) -> TrackHit {
         let count = self.frames.len();
-        let candidates: Box<dyn Iterator<Item = usize>> = match hint {
-            Some(hint) => Box::new((0..=Self::SEARCH_WINDOW * 2).map(move |o| (hint + count + o - Self::SEARCH_WINDOW) % count)),
-            None => Box::new(0..count),
+        // Window around the hint, or the whole loop when there is none.
+        let (first, span) = match hint {
+            Some(hint) => (hint + count - Self::SEARCH_WINDOW, Self::SEARCH_WINDOW * 2 + 1),
+            None => (0, count),
         };
         let mut best = TrackHit { frame: self.frames[0], index: 0 };
         let mut best_distance = f32::MAX;
-        for i in candidates {
+        for i in (first..first + span).map(|i| i % count) {
             let a = &self.frames[i];
             let b = &self.frames[(i + 1) % count];
             let segment = b.position - a.position;

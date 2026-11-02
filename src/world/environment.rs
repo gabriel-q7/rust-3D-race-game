@@ -1,10 +1,13 @@
-use bevy::{math::primitives::{Cuboid, Cylinder, Sphere, Tetrahedron, Torus}, prelude::*};
+use bevy::{light::CascadeShadowConfigBuilder, math::primitives::{Cuboid, Cylinder, Sphere, Tetrahedron, Torus}, prelude::*};
 
 use crate::{
-    resources::TrackPath,
-    world::{animation::{Floating, Pulsating, Rotating, Swaying}, hash01},
+    resources::{TrackFrame, TrackPath},
+    world::{animation::{Floating, Pulsating, Rotating, Swaying}, hash01, lighting::{MAGENTA, PURPLE}},
 };
 
+/// Directional shadow cascades and how far from the camera shadows reach (m).
+const SHADOW_CASCADES: usize = 2;
+const SHADOW_DISTANCE: f32 = 120.0;
 /// Props are scattered on a jittered grid covering this half-extent around the origin.
 const SCATTER_EXTENT: f32 = 300.0;
 const SCATTER_CELL: f32 = 38.0;
@@ -12,6 +15,8 @@ const SCATTER_CELL: f32 = 38.0;
 const ROAD_MARGIN: f32 = 6.0;
 /// Pulsing neon is grouped into a few phase-shifted materials instead of one per entity.
 const PHASE_GROUPS: usize = 4;
+/// Only the first few towers get a real roof light; the rest rely on emissive bands.
+const MAX_BUILDING_LIGHTS: usize = 4;
 
 pub struct EnvironmentPlugin;
 impl Plugin for EnvironmentPlugin { fn build(&self, app: &mut App) { app.add_systems(Startup, spawn_environment); } }
@@ -45,7 +50,10 @@ impl Palette {
 }
 
 fn spawn_environment(mut commands: Commands, path: Res<TrackPath>, mut meshes: ResMut<Assets<Mesh>>, mut materials: ResMut<Assets<StandardMaterial>>) {
-    commands.spawn((DirectionalLight { illuminance: 7000.0, color: Color::srgb(0.35, 0.2, 0.7), shadow_maps_enabled: true, ..default() }, Transform::from_rotation(Quat::from_euler(EulerRot::XYZ, -1.0, -0.8, 0.0))));
+    // Shadows only matter around the player: two cascades over 120 m instead of
+    // Bevy's default four over 150 m halves the shadow views rendered each frame.
+    let cascades = CascadeShadowConfigBuilder { num_cascades: SHADOW_CASCADES, first_cascade_far_bound: 30.0, maximum_distance: SHADOW_DISTANCE, ..default() }.build();
+    commands.spawn((DirectionalLight { illuminance: 7000.0, color: Color::srgb(0.35, 0.2, 0.7), shadow_maps_enabled: true, ..default() }, cascades, Transform::from_rotation(Quat::from_euler(EulerRot::XYZ, -1.0, -0.8, 0.0))));
     commands.insert_resource(GlobalAmbientLight { color: Color::srgb(0.18, 0.06, 0.25), brightness: 500.0, ..default() });
     // Ground, grid and sun live in the backdrop module.
     let palette = Palette::new(&mut materials);
@@ -57,7 +65,7 @@ fn spawn_environment(mut commands: Commands, path: Res<TrackPath>, mut meshes: R
     // Arches sit on the generated road, evenly spread around the loop, outside the rails.
     let post = meshes.add(Cuboid::new(0.6, 11.0, 0.6));
     let beam = meshes.add(Cuboid::new(path.width + 3.4, 0.6, 0.6));
-    for (i, frame) in path.frames.iter().skip(path.frames.len() / 8).step_by(path.frames.len() / 6).enumerate() {
+    for (i, frame) in arch_frames(&path).enumerate() {
         let material = &palette.cyan_pulse[i % PHASE_GROUPS];
         let rotation = Transform::IDENTITY.looking_to(frame.tangent, Vec3::Y).rotation;
         for offset in [-1.0, 1.0] {
@@ -82,6 +90,7 @@ fn spawn_environment(mut commands: Commands, path: Res<TrackPath>, mut meshes: R
     let half_road = path.width * 0.5;
     let cells = (SCATTER_EXTENT * 2.0 / SCATTER_CELL) as i32;
     let mut lights = 0;
+    let mut building_lights = 0;
     for cx in 0..cells {
         for cz in 0..cells {
             let id = (cx * cells + cz) as u32 * 7;
@@ -94,7 +103,11 @@ fn spawn_environment(mut commands: Commands, path: Res<TrackPath>, mut meshes: R
             match roll(3) {
                 k if k < 0.38 && clearance > 6.0 => props.palm(&mut commands, &palette, ground, roll(4), phase),
                 k if k < 0.52 && clearance > 2.0 => props.pillar(&mut commands, &palette, ground, id as usize),
-                k if k < 0.64 && clearance > 12.0 => props.building(&mut commands, &palette, ground, roll(4), id as usize),
+                k if k < 0.64 && clearance > 12.0 => {
+                    let with_light = building_lights < MAX_BUILDING_LIGHTS;
+                    building_lights += with_light as usize;
+                    props.building(&mut commands, &palette, ground, roll(4), id as usize, with_light);
+                }
                 k if k < 0.76 && clearance > 9.0 => {
                     let with_light = lights < 6;
                     lights += with_light as usize;
@@ -105,6 +118,11 @@ fn spawn_environment(mut commands: Commands, path: Res<TrackPath>, mut meshes: R
             }
         }
     }
+}
+
+/// Track samples that carry a neon arch; shared with the lighting module.
+pub fn arch_frames(path: &TrackPath) -> impl Iterator<Item = &TrackFrame> {
+    path.frames.iter().skip(path.frames.len() / 8).step_by(path.frames.len() / 6)
 }
 
 struct Props {
@@ -145,10 +163,14 @@ impl Props {
     }
 
     /// Dark tower with a pulsing neon roof band.
-    fn building(&self, commands: &mut Commands, palette: &Palette, base: Vec3, size: f32, id: usize) {
+    fn building(&self, commands: &mut Commands, palette: &Palette, base: Vec3, size: f32, id: usize, with_light: bool) {
         let height = 14.0 + 22.0 * size;
         commands.spawn((Mesh3d(self.building.clone()), MeshMaterial3d(palette.purple.clone()), Transform::from_translation(base + Vec3::Y * height * 0.5).with_scale(Vec3::new(14.0, height, 14.0))));
         commands.spawn((Mesh3d(self.building.clone()), MeshMaterial3d(palette.pink_pulse[id % PHASE_GROUPS].clone()), Transform::from_translation(base + Vec3::Y * (height + 0.25)).with_scale(Vec3::new(14.6, 0.5, 14.6))));
+        if with_light {
+            // Roof light washes the tower top and nearby ground in purple.
+            commands.spawn((PURPLE.light(), Transform::from_translation(base + Vec3::Y * (height + 3.0))));
+        }
     }
 
     /// Hexagonal hover platform with a neon rim; bobs and turns slowly.
@@ -157,7 +179,7 @@ impl Props {
         commands.spawn((Mesh3d(self.ring.clone()), MeshMaterial3d(palette.cyan.clone()), Transform::default(), ChildOf(root)));
         if with_light {
             // A handful of real lights; kept few because each costs per-pixel work.
-            commands.spawn((PointLight { color: Color::srgb(1.0, 0.2, 0.7), intensity: 2_000_000.0, range: 45.0, shadow_maps_enabled: false, ..default() }, Transform::from_xyz(0.0, -2.0, 0.0), Pulsating::new(0.5, 0.5, phase), ChildOf(root)));
+            commands.spawn((MAGENTA.light(), Transform::from_xyz(0.0, -2.0, 0.0), Pulsating::new(0.5, 0.5, phase), ChildOf(root)));
         }
     }
 

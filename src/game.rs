@@ -14,12 +14,14 @@ impl Plugin for GamePlugin {
                 world::EnvironmentPlugin,
                 world::BackdropPlugin,
                 world::AnimationPlugin,
+                world::TrackLightingPlugin,
                 systems::track::TrackPlugin,
                 systems::player::PlayerPlugin,
                 systems::ship::ShipPlugin,
                 systems::camera::CameraPlugin,
                 systems::race::RacePlugin,
                 systems::ui::UiPlugin,
+                systems::perf::PerfPlugin,
             ))
             .add_systems(Update, systems::race::leave_loading.run_if(in_state(GameState::Loading)))
             .add_systems(Update, systems::race::restart_input);
